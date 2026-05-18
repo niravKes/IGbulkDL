@@ -1,0 +1,7 @@
+# One Instagram post URL per line.
+# Supports individual posts, reels, and carousel posts.
+# Lines starting with # are ignored.
+
+https://www.instagram.com/p/ABC123example/
+https://www.instagram.com/p/DEF456example/
+https://www.instagram.com/reel/GHI789example/
