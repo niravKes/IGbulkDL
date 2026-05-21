@@ -21,17 +21,19 @@ A desktop tool for batch-downloading Instagram posts - videos, reels, image post
 
 - Python 3.8+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- [gallery-dl](https://github.com/mikf/gallery-dl)
+- [instaloader](https://github.com/instaloader/instaloader)
 
 ```
 pip install -r requirements.txt
 ```
 
-### Authentication (recommended)
+### Authentication
 
-Instagram rate-limits anonymous access heavily. Export your browser cookies and pass them to the tool - this significantly improves reliability.
+Cookies apply only to **yt-dlp** (videos and reels). Passing a `cookies.txt` reduces rate-limiting for those downloads.
 
-Most browsers are supported via yt-dlp's `--cookies-from-browser` flag, or you can export a `cookies.txt` (Netscape format) using a browser extension such as [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc).
+**instaloader** (used for image posts and image-only carousels) works without authentication for public posts — no cookies needed.
+
+To supply cookies for yt-dlp, export a `cookies.txt` (Netscape format) using a browser extension such as [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc), then pass it with `--cookies`.
 
 ---
 
@@ -75,8 +77,8 @@ python ig_download.py my-saves.txt design --cookies cookies.txt
 ## Features
 
 - **Videos and reels** - downloaded via yt-dlp (best quality, merged to mp4)
-- **Image posts** - downloaded via gallery-dl
-- **Carousels** - yt-dlp handles mixed video/image carousels; falls back to gallery-dl for image-only carousels
+- **Image posts** - downloaded via instaloader
+- **Carousels** - yt-dlp handles mixed video/image carousels; falls back to instaloader for image-only carousels
 - **Skip duplicates** - already-downloaded posts are skipped automatically (by log and by disk check)
 - **Rate-limit protection** - waits and retries only after several consecutive rate-limited responses; isolated unavailable posts are logged and skipped without pausing
 - **Retry failed** - re-run with `--retry-failed` to retry anything that previously failed

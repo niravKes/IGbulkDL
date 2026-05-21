@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ig_download.py — Download Instagram posts from a URL list using yt-dlp + gallery-dl.
+ig_download.py — Download Instagram posts from a URL list using yt-dlp + instaloader.
 
 Usage:
     python ig_download.py urls.txt art
@@ -20,6 +20,7 @@ Caption: actual post caption is now stored alongside the synthetic title.
 import argparse
 import json
 import os
+import pathlib
 import re
 import sys
 import time
@@ -31,12 +32,10 @@ except ImportError:
     sys.exit("yt-dlp is not installed.\nRun: pip install yt-dlp")
 
 try:
-    import gallery_dl
-    import gallery_dl.config
-    import gallery_dl.job
-    _GALLERY_DL_AVAILABLE = True
+    import instaloader
+    _INSTALOADER_AVAILABLE = True
 except ImportError:
-    _GALLERY_DL_AVAILABLE = False
+    _INSTALOADER_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -308,26 +307,45 @@ def yt_download_carousel(url, output_dir, shortcode, cookies_file,
 
 
 # ---------------------------------------------------------------------------
-# gallery-dl wrapper
+# instaloader wrapper
 # ---------------------------------------------------------------------------
 
-def gdl_download(url, output_dir, cookies_file):
-    if not _GALLERY_DL_AVAILABLE:
-        raise RuntimeError("gallery-dl is not installed. Run: pip install gallery-dl")
-    gallery_dl.config.clear()
-    gallery_dl.config.set((), "base-directory", output_dir)
-    gallery_dl.config.set((), "directory", [])
-    if cookies_file:
-        gallery_dl.config.set(("extractor",), "cookies", cookies_file)
+def instaloader_download(url, output_dir, cookies_file=None):
+    """Download an image post using instaloader. Works without authentication for public posts.
+    cookies_file is accepted for API compatibility but not used by instaloader."""
+    if not _INSTALOADER_AVAILABLE:
+        raise RuntimeError("instaloader is not installed. Run: pip install instaloader")
+    shortcode = shortcode_from_url(url)
+    if shortcode == "unknown":
+        raise RuntimeError(f"Cannot extract shortcode from URL: {url}")
+    os.makedirs(output_dir, exist_ok=True)
+    L = instaloader.Instaloader(
+        dirname_pattern=output_dir,
+        filename_pattern="{shortcode}",
+        download_videos=False,
+        download_video_thumbnails=False,
+        download_geotags=False,
+        download_comments=False,
+        save_metadata=False,
+        post_metadata_txt_pattern="",
+        quiet=True,
+    )
     try:
         before = set(os.listdir(output_dir))
     except OSError:
         before = set()
-    job = gallery_dl.job.DownloadJob(url)
-    job.run()
+    try:
+        post = instaloader.Post.from_shortcode(L.context, shortcode)
+        L.download_post(post, target=pathlib.Path(output_dir))
+    except instaloader.exceptions.InstaloaderException as e:
+        raise RuntimeError(f"instaloader: {e}")
     try:
         after = set(os.listdir(output_dir))
-        return sorted(os.path.join(output_dir, f) for f in (after - before))
+        return sorted(
+            os.path.join(output_dir, f)
+            for f in (after - before)
+            if os.path.splitext(f)[1].lower() in {'.jpg', '.jpeg', '.png', '.mp4', '.webp'}
+        )
     except OSError:
         return []
 
@@ -391,17 +409,17 @@ def download_url(url, output_dir, cookies_file, dry_run,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "dry_run", "timestamp": timestamp}
             try:
-                saved = gdl_download(url, output_dir, cookies_file)
+                saved = instaloader_download(url, output_dir, cookies_file)
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "ok",
                         "saved_path": saved[0] if saved else None, "timestamp": timestamp}
-            except Exception as gdl_err:
+            except Exception as insta_err:
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "failed",
-                        "error_category": "gallery_dl_error",
-                        "error_detail": str(gdl_err), "timestamp": timestamp}
+                        "error_category": "instaloader_error",
+                        "error_detail": str(insta_err), "timestamp": timestamp}
         return {"url": url, "shortcode": shortcode, "username": username,
                 "author": author, "title": title, "caption": caption,
                 "media_type": media_type, "status": "failed",
@@ -420,7 +438,7 @@ def download_url(url, output_dir, cookies_file, dry_run,
 
     if media_type == "image_only":
         try:
-            saved_files = gdl_download(url, output_dir, cookies_file)
+            saved_files = instaloader_download(url, output_dir, cookies_file)
             return {"url": url, "shortcode": shortcode, "username": username,
                     "author": author, "title": title, "caption": caption,
                     "media_type": "image", "status": "ok",
@@ -429,7 +447,7 @@ def download_url(url, output_dir, cookies_file, dry_run,
             return {"url": url, "shortcode": shortcode, "username": username,
                     "author": author, "title": title, "caption": caption,
                     "media_type": "image", "status": "failed",
-                    "error_category": "gallery_dl_error",
+                    "error_category": "instaloader_error",
                     "error_detail": str(e), "timestamp": timestamp}
 
     if media_type == "carousel":
@@ -442,19 +460,19 @@ def download_url(url, output_dir, cookies_file, dry_run,
                         "media_type": "carousel", "status": "ok",
                         "carousel_count": len(saved),
                         "saved_path": saved[0], "timestamp": timestamp}
-            # yt-dlp got nothing — likely an image-only carousel; try gallery-dl
-            saved_gdl = gdl_download(url, output_dir, cookies_file)
-            if saved_gdl:
+            # yt-dlp got nothing — likely an image-only carousel; try instaloader
+            saved_insta = instaloader_download(url, output_dir, cookies_file)
+            if saved_insta:
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "carousel", "status": "ok",
-                        "carousel_count": len(saved_gdl),
-                        "saved_path": saved_gdl[0], "timestamp": timestamp}
+                        "carousel_count": len(saved_insta),
+                        "saved_path": saved_insta[0], "timestamp": timestamp}
             return {"url": url, "shortcode": shortcode, "username": username,
                     "author": author, "title": title, "caption": caption,
                     "media_type": "carousel", "status": "failed",
                     "error_category": "no_files_saved",
-                    "error_detail": "Neither yt-dlp nor gallery-dl saved any files for this carousel",
+                    "error_detail": "Neither yt-dlp nor instaloader saved any files for this carousel",
                     "timestamp": timestamp}
         except Exception as e:
             return {"url": url, "shortcode": shortcode, "username": username,
@@ -476,17 +494,17 @@ def download_url(url, output_dir, cookies_file, dry_run,
         cat = classify_error(err_str)
         if cat == "image_only":
             try:
-                saved_files = gdl_download(url, output_dir, cookies_file)
+                saved_files = instaloader_download(url, output_dir, cookies_file)
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "ok",
                         "saved_path": saved_files[0] if saved_files else None, "timestamp": timestamp}
-            except Exception as gdl_err:
+            except Exception as insta_err:
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "failed",
-                        "error_category": "gallery_dl_error",
-                        "error_detail": str(gdl_err), "timestamp": timestamp}
+                        "error_category": "instaloader_error",
+                        "error_detail": str(insta_err), "timestamp": timestamp}
         return {"url": url, "shortcode": shortcode, "username": username,
                 "author": author, "title": title, "caption": caption,
                 "media_type": "video", "status": "failed",
@@ -522,9 +540,9 @@ def run_download(
     stop_event:  optional threading.Event; set to cancel cleanly mid-run.
     Returns the final summary dict.
     """
-    if not _GALLERY_DL_AVAILABLE:
-        print("Warning: gallery-dl not installed — image-only downloads will fail.\n"
-              "Install with: pip install gallery-dl", file=sys.stderr)
+    if not _INSTALOADER_AVAILABLE:
+        print("Warning: instaloader not installed — image-only downloads will fail.\n"
+              "Install with: pip install instaloader", file=sys.stderr)
 
     # Derive log file name from collection if not specified
     if log_file is None:
@@ -677,7 +695,7 @@ def run_download(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download Instagram posts from a URL list using yt-dlp + gallery-dl."
+        description="Download Instagram posts from a URL list using yt-dlp + instaloader."
     )
     parser.add_argument("url_file")
     parser.add_argument("collection")
