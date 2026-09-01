@@ -8,12 +8,12 @@ A desktop tool for batch-downloading Instagram posts - videos, reels, image post
 
 ## Files
 
-| File | Purpose |
-|---|---|
-| `ig_download.py` | Core download engine. Works standalone as a CLI. |
-| `ig_gui.py` | Desktop GUI (tkinter). No extra dependencies. |
+| File                | Purpose                                                 |
+| ------------------- | ------------------------------------------------------- |
+| `ig_download.py`    | Core download engine. Works standalone as a CLI.        |
+| `ig_gui.py`         | Desktop GUI (tkinter). No extra dependencies.           |
 | `ig_dashboard.html` | Standalone HTML log viewer. Open directly in a browser. |
-| `example.txt` | Example URL file format. |
+| `example.txt`       | Example URL file format.                                |
 
 ---
 
@@ -92,15 +92,15 @@ python ig_download.py my-saves.txt design --cookies cookies.txt
 
 The `--filename-template` option (or the template field in the GUI) controls the output filename. Available variables:
 
-| Variable | Description |
-|---|---|
-| `{shortcode}` | Instagram post shortcode (default) |
-| `{author}` | Uploader username |
-| `{title}` | Post title as reported by yt-dlp |
-| `{upload_date}` | Original upload date (`YYYYMMDD`) |
-| `{date}` | Today's date (`YYYY-MM-DD`) |
-| `{index}` | Sequential position in the current run |
-| `{index:04d}` | Zero-padded index (width 4) |
+| Variable        | Description                            |
+| --------------- | -------------------------------------- |
+| `{shortcode}`   | Instagram post shortcode (default)     |
+| `{author}`      | Uploader username                      |
+| `{title}`       | Post title as reported by yt-dlp       |
+| `{upload_date}` | Original upload date (`YYYYMMDD`)      |
+| `{date}`        | Today's date (`YYYY-MM-DD`)            |
+| `{index}`       | Sequential position in the current run |
+| `{index:04d}`   | Zero-padded index (width 4)            |
 
 Examples:
 
