@@ -127,7 +127,29 @@ def classify_error(msg):
         return "image_only"
     if "network" in msg_lower or "connect" in msg_lower or "timed out" in msg_lower or "http error" in msg_lower:
         return "network_error"
+    if "failed to parse json" in msg_lower or "unable to extract" in msg_lower:
+        return "extractor_broken"
     return "other_error"
+
+
+def _media_type_from_files(paths):
+    """Infer media type from the files instaloader actually saved."""
+    if not paths:
+        return "unknown"
+    exts = {os.path.splitext(f)[1].lower() for f in paths}
+    if exts & {".mp4"}:
+        return "video"
+    return "carousel" if len(paths) > 1 else "image"
+
+
+# Error categories where yt-dlp failed but instaloader may still succeed.
+# instaloader uses Instagram's GraphQL API directly, so it is unaffected by
+# yt-dlp extractor breakage and handles image posts/carousels natively.
+_INSTALOADER_FALLBACK_CATEGORIES = frozenset({
+    "image_only",
+    "extractor_broken",
+    "other_error",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -310,8 +332,13 @@ def yt_download_carousel(url, output_dir, shortcode, cookies_file,
 # instaloader wrapper
 # ---------------------------------------------------------------------------
 
-def instaloader_download(url, output_dir, cookies_file=None):
-    """Download an image post using instaloader. Works without authentication for public posts.
+def instaloader_download(url, output_dir, cookies_file=None, download_videos=False):
+    """Download a post using instaloader. Works without authentication for public posts.
+
+    download_videos defaults to False because instaloader normally only supplements
+    yt-dlp for image posts. Set it True when yt-dlp cannot extract the post at all,
+    making instaloader the only path to the media.
+
     cookies_file is accepted for API compatibility but not used by instaloader."""
     if not _INSTALOADER_AVAILABLE:
         raise RuntimeError("instaloader is not installed. Run: pip install instaloader")
@@ -322,7 +349,7 @@ def instaloader_download(url, output_dir, cookies_file=None):
     L = instaloader.Instaloader(
         dirname_pattern=output_dir,
         filename_pattern="{shortcode}",
-        download_videos=False,
+        download_videos=download_videos,
         download_video_thumbnails=False,
         download_geotags=False,
         download_comments=False,
@@ -403,23 +430,29 @@ def download_url(url, output_dir, cookies_file, dry_run,
     except yt_dlp.utils.DownloadError as e:
         err_str = strip_ansi(str(e))
         cat = classify_error(err_str)
-        if cat == "image_only":
+        if cat in _INSTALOADER_FALLBACK_CATEGORIES:
             if dry_run:
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "dry_run", "timestamp": timestamp}
             try:
-                saved = instaloader_download(url, output_dir, cookies_file)
+                # yt-dlp could not extract at all, so instaloader is the only
+                # path to the media — let it fetch videos too.
+                saved = instaloader_download(url, output_dir, cookies_file,
+                                             download_videos=True)
+                if not saved:
+                    raise RuntimeError("instaloader saved no files")
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
-                        "media_type": "image", "status": "ok",
-                        "saved_path": saved[0] if saved else None, "timestamp": timestamp}
+                        "media_type": _media_type_from_files(saved), "status": "ok",
+                        "saved_path": saved[0], "timestamp": timestamp}
             except Exception as insta_err:
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "failed",
                         "error_category": "instaloader_error",
-                        "error_detail": str(insta_err), "timestamp": timestamp}
+                        "error_detail": f"yt-dlp: {err_str} | instaloader: {insta_err}",
+                        "timestamp": timestamp}
         return {"url": url, "shortcode": shortcode, "username": username,
                 "author": author, "title": title, "caption": caption,
                 "media_type": media_type, "status": "failed",
@@ -492,19 +525,23 @@ def download_url(url, output_dir, cookies_file, dry_run,
     except yt_dlp.utils.DownloadError as e:
         err_str = strip_ansi(str(e))
         cat = classify_error(err_str)
-        if cat == "image_only":
+        if cat in _INSTALOADER_FALLBACK_CATEGORIES:
             try:
-                saved_files = instaloader_download(url, output_dir, cookies_file)
+                saved_files = instaloader_download(url, output_dir, cookies_file,
+                                                   download_videos=True)
+                if not saved_files:
+                    raise RuntimeError("instaloader saved no files")
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
-                        "media_type": "image", "status": "ok",
-                        "saved_path": saved_files[0] if saved_files else None, "timestamp": timestamp}
+                        "media_type": _media_type_from_files(saved_files), "status": "ok",
+                        "saved_path": saved_files[0], "timestamp": timestamp}
             except Exception as insta_err:
                 return {"url": url, "shortcode": shortcode, "username": username,
                         "author": author, "title": title, "caption": caption,
                         "media_type": "image", "status": "failed",
                         "error_category": "instaloader_error",
-                        "error_detail": str(insta_err), "timestamp": timestamp}
+                        "error_detail": f"yt-dlp: {err_str} | instaloader: {insta_err}",
+                        "timestamp": timestamp}
         return {"url": url, "shortcode": shortcode, "username": username,
                 "author": author, "title": title, "caption": caption,
                 "media_type": "video", "status": "failed",
